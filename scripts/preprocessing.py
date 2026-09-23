@@ -8,7 +8,8 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 # 1. 데이터 로드 & 구조 확인
-df = pd.read_excel("ENB2012_data.xlsx")
+df = pd.read_csv("ENB2012_data.csv")
+df = df.dropna(how='all').reset_index(drop=True)  # 완전히 빈 행 제거
 print(f"[1] 행: {df.shape[0]}, 열: {df.shape[1]}, 결측치: {df.isnull().sum().sum()}개")
 
 # 2. 컬럼명 정리
