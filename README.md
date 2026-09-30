@@ -2,6 +2,8 @@
 
 건물의 설계 조건(평수 등)을 입력하면 예상 난방/냉방 에너지 부하를 예측해주는 서비스입니다.
 
+> 현재 상태: 모델 학습 및 API 로직 로컬 테스트 완료. AWS 배포는 다음 단계로 진행 예정입니다.
+
 ## 📌 프로젝트 소개
 
 집을 짓거나 이사할 때 "이 정도 평수면 냉난방비가 대략 얼마나 나올까?"라는 질문에 답하기 위해 만들었습니다. 머신러닝 모델이 건물의 물리적 조건을 학습해서, 평수만 입력해도(또는 상세 조건을 직접 입력해도) 예상 난방/냉방 부하를 알려줍니다.
@@ -22,12 +24,12 @@
 ## 🔎 입력 / 출력
 
 **입력**
-- 간편 모드: 평수 (숫자 1개)
+- 간편 모드: 평수 (숫자 1개, `pyeong`)
 - 정밀 모드: 상대 조밀도, 표면적, 벽면적, 지붕면적, 높이, 방향, 유리창 면적, 유리창 분포 (8개)
 
 **출력**
-- 예상 난방부하 (heating load)
-- 예상 냉방부하 (cooling load)
+- 예상 난방부하 (heating_load)
+- 예상 냉방부하 (cooling_load)
 
 ## 🖥️ 최소 화면 구성
 
@@ -57,43 +59,59 @@
 | 난방부하 | 0.35 | 0.998 |
 | 냉방부하 | 1.17 | 0.961 |
 
+- 샘플 10개 기준 평균 오차율: 난방 1.28%, 냉방 2.40% (검증 완료)
+
 ## 🔌 API
 
-AWS Lambda + API Gateway로 배포된 REST API를 제공합니다.
+`api/lambda_function.py`에 구현되어 있으며, **현재는 로컬 환경에서 직접 함수를 호출해 테스트한 상태**입니다. AWS Lambda + API Gateway 배포는 다음 단계로 진행 예정입니다.
 
-**요청 (정밀 모드)**
-```json
-POST /predict
-{
-  "relative_compactness": 0.75,
-  "surface_area": 673.75,
-  "wall_area": 318.5,
-  "roof_area": 183.75,
-  "height": 5.25,
-  "orientation": 3,
-  "glazing_area": 0.25,
-  "glazing_dist": 3
-}
-```
+### 요청 형식
 
-**요청 (간편 모드 — 평수만)**
+**간편 모드 — 평수만**
 ```json
-POST /predict
 { "pyeong": 34 }
 ```
 
-**응답**
+**정밀 모드 — 8개 항목 전부**
 ```json
 {
-  "heating_load": 18.42,
-  "cooling_load": 24.91
+  "relative_compactness": 0.98,
+  "surface_area": 514.5,
+  "wall_area": 294.0,
+  "roof_area": 110.25,
+  "height": 7.0,
+  "orientation": 2,
+  "glazing_area": 0.0,
+  "glazing_dist": 0
 }
 ```
+
+### 응답 형식
+
+```json
+{
+  "mode": "simple",
+  "heating_load": 16.56,
+  "cooling_load": 18.97,
+  "note": "평수 외 조건은 표준값(중앙값)으로 가정한 참고용 예측입니다.",
+  "assumed_roof_area_m2": 112.4
+}
+```
+
+### 로컬 테스트 방법
+
+```bash
+cd api
+python test_local.py
+```
+
+`test_local.py`가 간편 모드, 정밀 모드, 입력값 누락(에러) 케이스를 순서대로 호출해 정상 작동 여부를 확인합니다. 현재 세 가지 케이스 모두 정상 응답(200/400) 확인 완료.
 
 ## 🛠️ 기술 스택
 
 - 데이터 전처리 / 모델 학습: Python, pandas, scikit-learn
-- 배포: AWS Lambda (컨테이너 이미지), API Gateway, ECR
+- API: AWS Lambda 호환 핸들러 (`lambda_handler`), 로컬 테스트는 순수 Python으로 진행
+- 배포 예정: AWS Lambda (컨테이너 이미지), API Gateway, ECR
 
 ## 📁 폴더 구조
 
@@ -103,6 +121,13 @@ energy_efficiency/
 ├── scripts/
 │   ├── preprocessing.py         # 데이터 전처리
 │   └── model.py                 # 모델 학습 및 검증
+├── api/                          # 배포용 API 코드 (현재 로컬 테스트 단계)
+│   ├── lambda_function.py       # Lambda 핸들러 (간편/정밀 모드 지원)
+│   ├── model.pkl                # 학습된 모델 (api 폴더용 사본)
+│   ├── Dockerfile                # 배포용 컨테이너 이미지 설계도
+│   ├── requirements.txt          # 필요 패키지 목록
+│   └── test_local.py             # 로컬 동작 테스트 스크립트
+├── building_energy_rf_model.pkl # 학습된 모델 원본
 ├── ENB2012_data.csv             # 원본 데이터
 ├── ENB2012_preprocessed.csv     # 전처리 완료 데이터
 ├── energy_dataset.md            # 데이터셋 설명 문서
@@ -114,4 +139,3 @@ energy_efficiency/
 | 이름 | 역할 |
 |---|---|
 | (팀원 이름) | (역할) |
-=======
