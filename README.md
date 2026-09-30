@@ -132,10 +132,3 @@ energy_efficiency/
 ├── ENB2012_preprocessed.csv     # 전처리 완료 데이터
 ├── energy_dataset.md            # 데이터셋 설명 문서
 └── README.md
-```
-
-## 👥 팀 구성
-
-| 이름 | 역할 |
-|---|---|
-| (팀원 이름) | (역할) |
