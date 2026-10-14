@@ -1,134 +1,164 @@
-# 🏠 우리집 평수로 보는 예상 냉난방 부하
+# 🏠 건물의 냉난방 부담 예상 (8팀)
 
-건물의 설계 조건(평수 등)을 입력하면 예상 난방/냉방 에너지 부하를 예측해주는 서비스입니다.
+집의 평수·층수·지역·냉난방 설비 같은 조건을 입력하면, 1년 동안 필요한 난방·냉방 에너지(MBtu, kWh)를 예측해 주는 서비스입니다.
 
-> 현재 상태: 모델 학습 및 API 로직 로컬 테스트 완료. AWS 배포는 다음 단계로 진행 예정입니다.
+> **현재 상태**: 모델 학습, API(로컬 테스트 11/11), 입력 화면(로컬) 완료. **AWS 배포는 아직 하지 않았습니다.**
+> **주의**: 학습 데이터는 미국 주택 시뮬레이션이라, 한국 집의 실제 값이 아니라 **참고용 추정치**입니다.
 
 ## 📌 프로젝트 소개
 
-집을 짓거나 이사할 때 "이 정도 평수면 냉난방비가 대략 얼마나 나올까?"라는 질문에 답하기 위해 만들었습니다. 머신러닝 모델이 건물의 물리적 조건을 학습해서, 평수만 입력해도(또는 상세 조건을 직접 입력해도) 예상 난방/냉방 부하를 알려줍니다.
+"이 정도 평수·조건이면 냉난방에 에너지가 얼마나 들까?"에 답하기 위해 만들었습니다. 머신러닝 모델이 건물 조건과 설비를 학습해, 입력한 조건의 연간 난방·냉방 부하를 알려 줍니다.
 
 ## 🎯 타겟 사용자
 
-- 집 평수만 알고 대략적인 냉난방 부하가 궁금한 일반 사용자
-- 건물 설계안을 비교하며 에너지 효율을 검토하는 담당자
+- 집 평수와 기본 설비만 알고 대략적인 냉난방 부담이 궁금한 일반 사용자
+- 단열·창·기밀 같은 조건을 바꿔 가며 에너지 효율을 비교해 보려는 사용자
 
 ## ✨ 주요 기능
 
 | 기능 | 설명 |
 |---|---|
-| 간편 예측 | 평수만 입력하면 예상 난방/냉방 부하를 바로 확인 |
-| 정밀 예측 | 표면적·벽면적·방향·유리창 비율 등을 직접 입력해 더 정확한 예측 |
-| 오차 범위 제공 | 예측값과 함께 참고용 오차 범위 표시 |
+| 간편 모드 | 입력 9개(평수, 층수, 주, 기후 구역, 건물 유형, 건축 연대, 냉방·난방 설비, 난방 연료)로 빠르게 예측 |
+| 상세 모드 | 간편 입력 + 설정온도, 기밀도, 단열 R값, 창·벽·지붕 면적 등 총 27개를 넣어 더 정확하게 예측 |
+| 경고 안내 | 학습 범위를 벗어난 값은 경고를 함께 반환하고, 평수가 학습 범위(7.7~157평) 밖이면 요청을 거절 |
+| 오류 응답 | 누락·잘못된 값은 `400`, 모델 문제는 `500` JSON으로 응답 (서버가 죽지 않음) |
 
 ## 🔎 입력 / 출력
 
-**입력**
-- 간편 모드: 평수 (숫자 1개, `pyeong`)
-- 정밀 모드: 상대 조밀도, 표면적, 벽면적, 지붕면적, 높이, 방향, 유리창 면적, 유리창 분포 (8개)
+**입력**: 간편 9개 / 상세 27개 (항목별 설명과 허용값은 [`docs/resstock_features.md`](docs/resstock_features.md))
 
 **출력**
-- 예상 난방부하 (heating_load)
-- 예상 냉방부하 (cooling_load)
+- 연간 난방 부하 `heating_mbtu_per_year`, `heating_kwh_per_year`
+- 연간 냉방 부하 `cooling_mbtu_per_year`, `cooling_kwh_per_year`
+- 사용한 모드, 경고(`warnings`), 모델 검증 점수(`validation_r2`)
 
-## 🖥️ 최소 화면 구성
-
-1. 평수 입력창 (기본, 필수)
-2. "상세 조건 입력하기" 토글 (선택, 펼치면 나머지 7개 항목 입력 가능)
-3. 예측 버튼
-4. 결과 화면: 예상 난방부하 / 냉방부하 + 오차 범위 안내 문구
+1평 = 35.58 ft², 1 MBtu = 293.071 kWh로 환산합니다.
 
 ## 📊 데이터셋
 
-- 출처: [UCI Machine Learning Repository - Energy Efficiency Dataset](https://archive.ics.uci.edu/dataset/242/energy+efficiency)
-- 768개 샘플, 8개 입력 변수, 2개 타겟(난방/냉방 부하), 결측치 없음
-- 건물 설계 시뮬레이션(Ecotect) 기반 데이터로, 실측 데이터가 아닌 시뮬레이션 데이터라는 한계가 있음
+- 출처: NREL **ResStock** "Annual Baseline Results with Component Loads" (미국 주택 약 55만 가구 시뮬레이션, CC-BY)
+- 이 중 8%를 무작위 추출해 **43,762행**(6,000 ft² 이하, 7.7~157평) 사용
+- 맞히는 값(타깃): 연간 난방·냉방 부하(MBtu). 면적당 부하를 학습한 뒤 면적을 곱해 되돌림
+- 이전에 시도한 UCI Energy Efficiency(768행)는 지붕 면적 값이 4종류뿐이라 20평대 작은 집 예측이 어려워 교체함
+- 결과 컬럼(`report_simulation_output.*`)은 입력에서 제외해 정답 누출을 막음
 
 ## ⚠️ 데이터/서비스 한계
 
-- 평수만 입력하는 간편 모드는 나머지 7개 조건을 데이터셋 중앙값으로 대체하기 때문에, 실제 건물 조건이 표준값과 많이 다르면 예측 오차가 커질 수 있음
-- 실제 거주 환경(재실 인원, 단열재 종류, 지역 기후 등)은 반영되지 않음 — 오직 건물의 형태·구조 정보만으로 예측
+- **미국 주택·기후 기준 시뮬레이션**이라 한국 주택의 실제 값과 다를 수 있습니다.
+- 간편 모드는 정확도가 낮습니다(R² 약 0.74). 상세 모드를 권장합니다.
+- 5세대 이상 공동주택 난방(R² 0.844)과 2~4세대 냉방(R² 0.829)은 0.85에 못 미칩니다.
+- 상세 모드의 기밀도(ACH50) 같은 값은 일반 사용자가 알기 어렵습니다.
+- 1회 요청 단위 예측이며, 시계열 예측은 지원하지 않습니다.
 
 ## 🧠 모델
 
-- 알고리즘: RandomForestRegressor (다중 출력 회귀)
-- 성능 (테스트셋 기준)
+- 알고리즘: `HistGradientBoostingRegressor` (난방·냉방 각각 1개), 범주형은 `OrdinalEncoder`
+- 평가: 전체의 20%를 학습에 쓰지 않고 따로 떼어 점수 산출(`random_state=42`). 배포용 모델은 전체 데이터로 재학습
 
-| 타겟 | MAE | R² |
-|---|---|---|
-| 난방부하 | 0.35 | 0.998 |
-| 냉방부하 | 1.17 | 0.961 |
+| 모드 | 입력 수 | 난방 R² | 냉방 R² | 난방 MAE | 냉방 MAE |
+|---|---|---|---|---|---|
+| 상세 | 27 | 0.941 | 0.918 | 7.59 MBtu | 4.22 MBtu |
+| 간편 | 9 | 0.734 | 0.737 | 16.05 MBtu | 7.70 MBtu |
 
-- 샘플 10개 기준 평균 오차율: 난방 1.28%, 냉방 2.40% (검증 완료)
+- 단순 기준(항상 평균만 답하기)의 MAE는 난방 35.80, 냉방 17.42 MBtu
+- 정확도 `100×(1−오차합/실제합)`: 상세 82.9% / 82.3%, 간편 63.8% / 67.8%
+- 상세 모드 평 구간별 R²(난방/냉방): 10평대 0.892/0.871, **20평대 0.905/0.895**, 30평대 0.920/0.903, 60평 이상 0.933/0.909
+- API 경로 검증: 학습에 쓰지 않은 데이터 1,500건을 `lambda_handler`에 JSON으로 넣었을 때 상세 R² 0.939(난방)/0.911(냉방), 간편 R² 0.751/0.713. 모델 직접 계산과의 차이는 0.005 MBtu 이하
+- 자세한 결과: [`docs/resstock_results.md`](docs/resstock_results.md), [`docs/resstock_metrics.json`](docs/resstock_metrics.json)
 
 ## 🔌 API
 
-`api/lambda_function.py`에 구현되어 있으며, **현재는 로컬 환경에서 직접 함수를 호출해 테스트한 상태**입니다. AWS Lambda + API Gateway 배포는 다음 단계로 진행 예정입니다.
+`api/lambda_function.py`의 `lambda_handler`가 AWS Lambda 함수 URL과 로컬 서버(`api/server.py`)에서 같은 코드로 동작합니다.
 
-### 요청 형식
+- `GET` : 사용법(필수 입력, 허용값, 숫자 범위)
+- `POST`: JSON 본문으로 예측
 
-**간편 모드 — 평수만**
-```json
-{ "pyeong": 34 }
-```
-
-**정밀 모드 — 8개 항목 전부**
-```json
-{
-  "relative_compactness": 0.98,
-  "surface_area": 514.5,
-  "wall_area": 294.0,
-  "roof_area": 110.25,
-  "height": 7.0,
-  "orientation": 2,
-  "glazing_area": 0.0,
-  "glazing_dist": 0
-}
-```
-
-### 응답 형식
+### 요청 예시 (간편 모드)
 
 ```json
 {
   "mode": "simple",
-  "heating_load": 16.56,
-  "cooling_load": 18.97,
-  "note": "평수 외 조건은 표준값(중앙값)으로 가정한 참고용 예측입니다.",
-  "assumed_roof_area_m2": 112.4
+  "area_pyeong": 24, "stories": 1, "state": "TX", "climate_zone": "2A",
+  "building_type": "Single-Family Detached", "vintage": "1990s",
+  "cooling_type": "Central AC", "heating_type": "Ducted Heating", "heating_fuel": "Natural Gas"
 }
 ```
 
-### 로컬 테스트 방법
+`mode`를 생략하면 상세 전용 입력이 하나라도 있을 때 `detail`, 아니면 `simple`로 처리합니다.
 
-```bash
-cd api
-python test_local.py
+### 응답 예시
+
+```json
+{
+  "mode": "simple",
+  "heating_mbtu_per_year": 4.95,
+  "cooling_mbtu_per_year": 36.42,
+  "heating_kwh_per_year": 1451,
+  "cooling_kwh_per_year": 10673,
+  "validation_r2": {"heating": 0.734, "cooling": 0.737},
+  "note": "간편 모드는 입력이 적어 참고용입니다(검증 R² 약 0.73). 정확한 값은 detail 모드를 사용하세요."
+}
 ```
 
-`test_local.py`가 간편 모드, 정밀 모드, 입력값 누락(에러) 케이스를 순서대로 호출해 정상 작동 여부를 확인합니다. 현재 세 가지 케이스 모두 정상 응답(200/400) 확인 완료.
+(수치는 예시이며, 환경에 따라 소수점 이하가 다를 수 있습니다.)
+
+### 응답 코드
+
+| 코드 | 상황 |
+|---|---|
+| 200 | 정상 예측 |
+| 400 | 입력 없음, JSON 형식 오류, 입력 누락, 허용되지 않는 값, 평수가 학습 범위 밖, 숫자가 아님, 잘못된 `mode` |
+| 500 | 모델을 불러오지 못함 등 서버 문제 (`{"error": "...", "detail": "..."}`) |
+
+### 로컬 테스트 (저장소 루트에서)
+
+```bash
+python -m pip install -r api/requirements.txt
+python scripts/resstock_train.py     # 처음 한 번: 모델 학습 (models/*.joblib 생성)
+python api/test_local.py             # 정상 3 + 오류 7 + 사용법 1 = 11건, 11/11 통과 확인
+```
+
+> `models/*.joblib`은 학습할 때 쓴 scikit-learn 버전에서만 열립니다. 로드 오류(500)가 나면 `python scripts/resstock_train.py`를 다시 실행하세요.
+
+## 🖥️ 입력 화면 (로컬)
+
+`web/index.html` + `web/app.js`: 간편/상세 탭, 입력 폼, 결과(kWh, MBtu), 경고 표시, 입력 검사(범위·빈 칸).
+
+```bash
+python -m pip install flask flask-cors
+python api/server.py                 # http://127.0.0.1:8000  (lambda_function 을 그대로 호출)
+cd web && python -m http.server 5500 # 브라우저에서 http://127.0.0.1:5500/index.html
+```
+
+AWS 배포 후에는 `web/app.js` 맨 위의 `API_URL`을 Lambda 함수 URL로 바꾸고, 함수 URL의 CORS를 허용해야 합니다.
 
 ## 🛠️ 기술 스택
 
-- 데이터 전처리 / 모델 학습: Python, pandas, scikit-learn
-- API: AWS Lambda 호환 핸들러 (`lambda_handler`), 로컬 테스트는 순수 Python으로 진행
-- 배포 예정: AWS Lambda (컨테이너 이미지), API Gateway, ECR
+- 데이터 처리·학습: Python, pandas, scikit-learn, joblib
+- API: AWS Lambda 호환 핸들러(`lambda_handler`), 로컬은 Flask
+- 화면: HTML, JavaScript (fetch)
+- 배포 예정: AWS Lambda(컨테이너 이미지) + 함수 URL, ECR, CloudShell에서 빌드
 
 ## 📁 폴더 구조
 
 ```
 energy_efficiency/
-├── members/                     # 팀원별 소개
 ├── scripts/
-│   ├── preprocessing.py         # 데이터 전처리
-│   └── model.py                 # 모델 학습 및 검증
-├── api/                          # 배포용 API 코드 (현재 로컬 테스트 단계)
-│   ├── lambda_function.py       # Lambda 핸들러 (간편/정밀 모드 지원)
-│   ├── model.pkl                # 학습된 모델 (api 폴더용 사본)
-│   ├── Dockerfile                # 배포용 컨테이너 이미지 설계도
-│   ├── requirements.txt          # 필요 패키지 목록
-│   └── test_local.py             # 로컬 동작 테스트 스크립트
-├── building_energy_rf_model.pkl # 학습된 모델 원본
-├── ENB2012_data.csv             # 원본 데이터
-├── ENB2012_preprocessed.csv     # 전처리 완료 데이터
-├── energy_dataset.md            # 데이터셋 설명 문서
+│   ├── extract_resstock_v2.py   # 원본 CSV에서 60개 컬럼, 8% 추출
+│   ├── resstock_prep.py         # 학습표 만들기 (단위 변환, 파생 변수)
+│   ├── resstock_train.py        # 학습·평가·모델 저장
+│   └── resstock_predict.py      # 입력 검증 + 예측
+├── data/resstock_sample_v2.csv.gz   # 추출한 샘플 (학습에 사용)
+├── models/                      # resstock_{detail,simple}.joblib
+├── docs/                        # 결과·입력 항목 설명, 지표 JSON
+├── api/
+│   ├── lambda_function.py       # Lambda 핸들러
+│   ├── server.py                # 로컬 테스트용 Flask 서버
+│   ├── test_local.py            # 로컬 테스트 11건
+│   ├── Dockerfile               # 배포용 컨테이너 이미지 (빌드 중 재학습)
+│   └── requirements.txt
+├── web/                         # 입력 화면 (index.html, app.js)
+├── members/                     # 팀원별 소개
+├── .dockerignore
 └── README.md
+
