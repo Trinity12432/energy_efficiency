@@ -1,6 +1,8 @@
-// 로컬 테스트: http://127.0.0.1:8000/predict
-// AWS 배포 후: Lambda 함수 URL 로 바꾸세요 (예: "https://xxxx.lambda-url.ap-northeast-2.on.aws/")
-const API_URL = "http://127.0.0.1:8000/predict";
+// 주소 결정
+//  - compose / EC2: 같은 주소의 nginx 가 /predict 를 API 컨테이너로 넘겨 주므로 "/predict"
+//  - 로컬 개발(화면 5500 포트 + python api/server.py 8000 포트): Flask 서버로 직접
+//  - 다른 곳(예: Lambda 함수 URL)을 쓰려면 index.html 에서 window.API_URL 을 먼저 지정
+const API_URL = window.API_URL || (location.port === "5500" ? "http://127.0.0.1:8000/predict" : "/predict");
 
 // 입력칸 값을 숫자로. 비었거나 숫자가 아니면 NaN
 function num(id) {

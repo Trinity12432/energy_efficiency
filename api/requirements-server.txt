@@ -1,0 +1,5 @@
+# 컨테이너(EC2/ECS)에서 웹 서버로 돌릴 때만 추가로 필요한 패키지. Lambda 이미지는 requirements.txt 만 사용
+-r requirements.txt
+flask>=3,<4
+flask-cors>=4
+gunicorn>=22

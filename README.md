@@ -1,18 +1,24 @@
 # 🏠 건물의 냉난방 부담 예상 (8팀)
 
-집의 평수·층수·지역·냉난방 설비 같은 조건을 입력하면, 1년 동안 필요한 난방·냉방 에너지(MBtu, kWh)를 예측해 주는 서비스입니다.
+## 한 줄 정의
 
-> **현재 상태**: 모델 학습, API(로컬 테스트 11/11), 입력 화면(로컬) 완료. **AWS 배포는 아직 하지 않았습니다.**
+NREL ResStock 미국 주택 시뮬레이션 데이터(약 4.4만 건)로 건물의 연간 난방·냉방 에너지를 예측해, 20평대 소형 주택을 새로 짓거나 고쳐 쓸지 고민하는 30대 맞벌이 예비 집주인(민수 씨)이 단열·창·냉난방 설비 조건을 바꿔 가며 냉난방 부담을 미리 비교해 보도록 돕는 서비스입니다.
+
+> **현재 상태**: 모델 학습, API(로컬 테스트 16/16), 입력 화면(로컬) 완료. AWS Lambda 함수 URL 응답, CloudWatch 로그, S3 내보내기까지 확인했습니다. 지금은 Docker Compose 컨테이너화와 EC2 배포 자동화를 준비하고 있습니다.
 > **주의**: 학습 데이터는 미국 주택 시뮬레이션이라, 한국 집의 실제 값이 아니라 **참고용 추정치**입니다.
 
 ## 📌 프로젝트 소개
 
 "이 정도 평수·조건이면 냉난방에 에너지가 얼마나 들까?"에 답하기 위해 만들었습니다. 머신러닝 모델이 건물 조건과 설비를 학습해, 입력한 조건의 연간 난방·냉방 부하를 알려 줍니다.
 
-## 🎯 타겟 사용자
+## 🎯 사용자와 사용 상황
 
-- 집 평수와 기본 설비만 알고 대략적인 냉난방 부담이 궁금한 일반 사용자
-- 단열·창·기밀 같은 조건을 바꿔 가며 에너지 효율을 비교해 보려는 사용자
+**대표 사용자(페르소나): 민수 씨, 33세, 맞벌이 부부, 예비 집주인**
+- 상황: 20평대 소형 주택을 새로 짓거나 오래된 집을 고쳐 쓸지 고민 중이고, 시공사 견적을 받기 전에 대략적인 냉난방 부담을 알고 싶음
+- 하는 일: 평수·층수·지역·냉난방 설비(간편 9개 입력)로 먼저 감을 잡고, 단열·창·기밀 같은 조건(상세 27개 입력)을 바꿔 가며 어느 조건이 에너지를 줄이는지 비교
+- 얻는 것: 연간 난방·냉방 에너지(MBtu, kWh) 예측값과 경고(학습 범위 밖 값, 간편 모드는 참고용)
+
+**이 서비스가 주는 값은 참고용입니다.** 한국 주택이 아니라 미국 주택 시뮬레이션으로 학습했고, 실제 설계·견적을 대신하지 않습니다.
 
 ## ✨ 주요 기능
 
@@ -125,6 +131,20 @@ python api/test_local.py             # API 11건 + 피드백 오류 2건 + 로�
 
 요청마다 JSON 한 줄(`predict` / `predict_error` / `feedback`)을 남기고, Lambda에서는 CloudWatch Logs에 자동으로 쌓입니다. 예측 응답의 `request_id`로 나중에 실제값을 보내면(`{"feedback": {"request_id": ..., "actual_heating_mbtu": ..., "actual_cooling_mbtu": ...}}`) 입력·예측·정답이 이어져 재학습 데이터가 됩니다. 필드 설명, S3 내보내기 절차, 정리 방법은 [`docs/logging.md`](docs/logging.md), 형식 예시는 `docs/sample_logs.jsonl`, 변환은 `scripts/logs_to_training.py`.
 
+## 🐳 컨테이너로 실행 (Docker Compose)
+
+API와 화면을 컨테이너 2개로 묶어 한 번에 실행합니다. 같은 구성을 EC2에도 그대로 씁니다.
+
+```bash
+docker compose up --build        # 처음에는 모델 학습 때문에 수 분 걸립니다
+```
+
+- 화면: `http://localhost` (80 포트가 사용 중이면 `WEB_PORT=8080`으로 지정해 실행, 윈도우 PowerShell은 `$env:WEB_PORT=8080; docker compose up --build`)
+- 상태 확인: `http://localhost/health` (사용법 JSON이 나오면 정상)
+- 화면의 `/predict` 요청은 nginx가 API 컨테이너(`api:8000`)로 넘겨 줍니다. API 포트는 내 컴퓨터(127.0.0.1)에만 열려 있습니다.
+- 구성: `api/Dockerfile.server`(API, gunicorn), `web/Dockerfile` + `web/nginx.conf`(화면), `docker-compose.yml`
+- Lambda용 이미지는 기존 `api/Dockerfile` 그대로입니다.
+
 ## 🖥️ 입력 화면 (로컬)
 
 `web/index.html` + `web/app.js`: 간편/상세 탭, 입력 폼, 결과(kWh, MBtu), 경고 표시, 입력 검사(범위·빈 칸).
@@ -161,9 +181,12 @@ energy_efficiency/
 │   ├── lambda_function.py       # Lambda 핸들러
 │   ├── server.py                # 로컬 테스트용 Flask 서버
 │   ├── test_local.py            # 로컬 테스트 16건
-│   ├── Dockerfile               # 배포용 컨테이너 이미지 (빌드 중 재학습)
+│   ├── Dockerfile               # Lambda 용 컨테이너 이미지 (빌드 중 재학습)
+│   ├── Dockerfile.server        # 웹 서버용 API 이미지 (EC2/ECS/compose)
+│   ├── requirements-server.txt  # 웹 서버용 추가 패키지
 │   └── requirements.txt
-├── web/                         # 입력 화면 (index.html, app.js)
+├── web/                         # 입력 화면 (index.html, app.js, nginx.conf, Dockerfile)
+├── docker-compose.yml           # api + web 컨테이너 묶음
 ├── members/                     # 팀원별 소개
 ├── .dockerignore
 └── README.md
@@ -183,3 +206,9 @@ energy_efficiency/
 - [ ] CloudWatch에 로그가 쌓이는지 확인, 로그 스트림 하나를 S3로 내보내기
 - [ ] 실습 후 자원 정리 (Lambda, ECR, 로그 그룹)
 - [ ] 간편 모드 정확도 개선, 공동주택 오차 개선
+
+## 👥 팀 구성
+
+| 이름 | 역할 |
+|---|---|
+| (팀원 이름) | (역할) |
